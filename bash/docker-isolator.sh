@@ -1,7 +1,9 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
 self="$(readlink -f -- "${BASH_SOURCE[0]}")"
-ISOLATOR_ROOT="$(cd "$(dirname "$self")" && pwd -P)"
+ISOLATOR_ROOT="$(cd "$(dirname "$self")/.." && pwd -P)"
+BASH_DIR="$ISOLATOR_ROOT/bash"
 PROJECTS_ROOT="$ISOLATOR_ROOT/projects"
 PROFILES_DIR="$ISOLATOR_ROOT/profiles"
 TRUSTED_DIR="$ISOLATOR_ROOT/trusted"
@@ -10,6 +12,9 @@ CONTAINER_ROOT='/home/ubuntu/host'
 CONTAINER_CODEX_HOME='/home/ubuntu/.codex'
 CONTAINER_UID=1000
 CONTAINER_GID=1000
+
+# shellcheck source=lib/config.sh
+source "$BASH_DIR/lib/config.sh"
 
 fail() { echo "docker-isolator: $*" >&2; exit 1; }
 warn() { echo "docker-isolator: warning: $*" >&2; }
@@ -206,26 +211,6 @@ parse_git_layout() {
     CONTAINER_COMMON="$CONTAINER_ROOT/$COMMON_REL"
     CONTAINER_GIT_DIR="$CONTAINER_ROOT/$GIT_DIR_REL"
   fi
-}
-
-reset_profile_vars() {
-  PROFILE_NAME=''
-  PROFILE_CHILD_REGEX='a^'
-  PROFILE_REMOTE_REGEX='a^'
-  PROFILE_IMAGE='jeffreybbrown/hode:latest'
-  PROFILE_NETWORK='isolated-bridge'
-  PROFILE_GIT_MODE='protected-shared'
-  PROFILE_PIPEWIRE=0
-  PROFILE_X11=0
-  PROFILE_ALSA=0
-  PROFILE_CAP_ADD=()
-  PROFILE_ULIMITS=()
-  PROFILE_CLAUDE_CONFIG_REL='my-dot-claude'
-  PROFILE_CODEX_HOOK=1
-  PROFILE_PORT_FILE=''
-  PROFILE_PORT_KEY=''
-  PROFILE_PUBLISH_ADDRESS='127.0.0.1'
-  PROFILE_PREFLIGHT_PATHS=()
 }
 
 load_profile() {
@@ -498,6 +483,10 @@ build_mount_args() {
   fi
 
   MOUNT_ARGS+=(--mount "type=bind,source=$CODEX_HOME,target=$CONTAINER_CODEX_HOME")
+  if [ -n "${CODEX_HOOK_SOURCE:-}" ]; then
+    MOUNT_ARGS+=(--mount "type=bind,source=$CODEX_HOOK_SOURCE,target=$CONTAINER_CODEX_HOME/hooks.json,readonly")
+    MOUNT_ARGS+=(--mount "type=bind,source=$CODEX_CONFIG_SOURCE,target=$CONTAINER_CODEX_HOME/config.toml,readonly")
+  fi
 }
 
 ensure_network() {
@@ -589,6 +578,23 @@ install_codex_hook() {
   "$installer" "$CODEX_HOME" "$template"
 }
 
+# Codex state itself stays writable (sessions, auth, logs, caches), but the
+# hook declaration and its trust record are a code-execution boundary. Pin
+# copies outside that writable mount and overlay them read-only below it.
+prepare_codex_hook_protection() {
+  [ "$PROFILE_CODEX_HOOK" = 1 ] || { CODEX_HOOK_SOURCE=''; CODEX_CONFIG_SOURCE=''; return 0; }
+  local hooks="$CODEX_HOME/hooks.json" config="$CODEX_HOME/config.toml"
+  [ -f "$hooks" ] && [ ! -L "$hooks" ] || fail "Codex hook file is missing or symlinked: $hooks"
+  [ -f "$config" ] && [ ! -L "$config" ] || fail "Codex config is missing or symlinked: $config"
+  [ "$(stat -c %h -- "$hooks")" = 1 ] || fail "Codex hook file has alternate hard links: $hooks"
+  [ "$(stat -c %h -- "$config")" = 1 ] || fail "Codex config has alternate hard links: $config"
+  cp -- "$hooks" "$PROTECTED_DIR/codex-hooks.json"
+  cp -- "$config" "$PROTECTED_DIR/codex-config.toml"
+  chmod 0444 "$PROTECTED_DIR/codex-hooks.json" "$PROTECTED_DIR/codex-config.toml"
+  CODEX_HOOK_SOURCE="$PROTECTED_DIR/codex-hooks.json"
+  CODEX_CONFIG_SOURCE="$PROTECTED_DIR/codex-config.toml"
+}
+
 prepare() {
   parse_git_layout
   load_profile "$PROFILE_OVERRIDE"
@@ -631,32 +637,8 @@ EOF_DESC
   [ "$PROFILE_ALSA" != 1 ] || echo 'device warning:   /dev/snd and sound-device cgroup access are exposed when available'
 }
 
-launch_prepared() {
-  require_docker
-  container_exists "$CONTAINER_NAME" && fail "container '$CONTAINER_NAME' already exists; use 'repair' rather than launching over it"
-  local users
-  users="$(containers_using_worktree)"
-  [ -z "$users" ] || fail "another container already bind-mounts this worktree ($users); use 'repair' or stop/remove it first"
-  validate_state_paths
-  prepare_git_protection
-  migrate_legacy_codex_if_needed
-  install_codex_hook
-  ensure_network
-  build_mount_args
-  build_capability_args
-  build_resource_args
-  build_profile_args
-
-  local image="${DOCKER_ISOLATOR_IMAGE:-$PROFILE_IMAGE}"
-  local args=(run --name "$CONTAINER_NAME" -it -d
-    --platform linux/amd64
-    --user "$CONTAINER_UID:$CONTAINER_GID"
-    --dns 8.8.8.8 --dns 1.1.1.1
-    -w "$CONTAINER_WT"
-  )
-  args+=("${NETWORK_ARGS[@]}" "${CAP_ARGS[@]}" "${RESOURCE_ARGS[@]}" "${MOUNT_ARGS[@]}" "${PROFILE_ARGS[@]}")
-  docker "${args[@]}" "$image"
-}
+# shellcheck source=lib/launch.sh
+source "$BASH_DIR/lib/launch.sh"
 
 find_container_for_repair() {
   if [ -n "$CONTAINER_OVERRIDE" ]; then
@@ -738,38 +720,10 @@ recover_codex_from_container() {
   trap - RETURN
 }
 
-repair_prepared() {
-  require_docker
-  validate_state_paths
-  find_container_for_repair
-  local name="$REPAIR_CONTAINER" running=false source=''
-  if container_exists "$name"; then
-    running="$(docker inspect --format '{{.State.Running}}' "$name" 2>/dev/null || echo false)"
-    if [ "$running" = true ]; then
-      confirm_destructive "Stop container '$name' so its Codex state can be copied consistently?" \
-        || fail "repair cancelled"
-      docker stop "$name" >/dev/null
-    fi
-    source="$(container_codex_source "$name")"
-    recover_codex_from_container "$name" "$source" || migrate_legacy_codex_if_needed
-    install_codex_hook
-    confirm_destructive "Remove old container '$name' after preserving its Codex state?" \
-      || fail "repair cancelled; stopped container left intact"
-    docker rm "$name" >/dev/null
-  else
-    note "no existing container '$name' found; repairing/migrating persistent state only"
-    migrate_legacy_codex_if_needed
-    install_codex_hook
-  fi
+# shellcheck source=lib/repair.sh
+source "$BASH_DIR/lib/repair.sh"
 
-  if [ "$NO_LAUNCH" = 0 ]; then
-    # Use the repaired/discovered name if it differed from the default.
-    CONTAINER_NAME="$name"
-    launch_prepared
-  fi
-}
-
-doctor_prepared() {
+legacy_doctor_prepared() {
   print_description
   echo
   if [ -e "$WT_TOP/docker.sh" ]; then
@@ -826,6 +780,9 @@ doctor_prepared() {
     fi
   fi
 }
+
+# shellcheck source=lib/inspect.sh
+source "$BASH_DIR/lib/inspect.sh"
 
 COMMAND="${1:-}"
 case "$COMMAND" in

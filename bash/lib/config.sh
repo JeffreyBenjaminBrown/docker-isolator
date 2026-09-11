@@ -1,0 +1,20 @@
+# Shared trusted defaults. Profiles override only the PROFILE_* variables.
+reset_profile_vars() {
+  PROFILE_NAME=''
+  PROFILE_CHILD_REGEX='a^'
+  PROFILE_REMOTE_REGEX='a^'
+  PROFILE_IMAGE='jeffreybbrown/hode:latest'
+  PROFILE_NETWORK='isolated-bridge'
+  PROFILE_GIT_MODE='protected-shared'
+  PROFILE_PIPEWIRE=0
+  PROFILE_X11=0
+  PROFILE_ALSA=0
+  PROFILE_CAP_ADD=()
+  PROFILE_ULIMITS=()
+  PROFILE_CLAUDE_CONFIG_REL='my-dot-claude'
+  PROFILE_CODEX_HOOK=1
+  PROFILE_PORT_FILE=''
+  PROFILE_PORT_KEY=''
+  PROFILE_PUBLISH_ADDRESS='127.0.0.1'
+  PROFILE_PREFLIGHT_PATHS=()
+}

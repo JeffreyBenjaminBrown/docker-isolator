@@ -1,4 +1,131 @@
-# docker-isolator
+Codex wrote this but then I edited it,
+some of it (like this sentence) in the first person.
+* Overview
+This is a strong *host-side launcher design*, but it is not a general sandbox
+for hostile code.  It materially improves on the currently running
+=skg/bash/docker.sh= provided that the isolator checkout is kept outside every
+agent-writable mount and target projects are actually placed under its
+=projects/= directory.
+
+It correctly treats a project-local launcher as untrusted, derives the Git
+layout without running project code, keeps Codex state outside the project, and
+blocks several delayed host-execution paths (Git config, default hooks, and a
+linked-worktree's =.git= pointer).  The launcher drops Linux capabilities,
+sets =no-new-privileges=, and does not mount a Docker socket.
+
+It is therefore reasonable for SKG, subject to the caveats below.  MIDI's
+profile deliberately grants much broader host access, so it is *not* strong
+isolation from a malicious process.  In particular it has host networking,
+X11, PipeWire, ALSA devices, realtime scheduling, and shared Git metadata.
+
+The current running container was not launched by this isolator: its project
+=bash/docker.sh= bind-mounts the whole checkout read/write, including Git
+metadata and in-project Codex state.  It is not protected by this review's
+changes.  Docker is not available inside this current container, so I could
+not inspect its outer Docker configuration directly.
+
+* What each command actually does
+All commands first parse only filesystem/Git metadata and choose a trusted
+profile.  They do not execute project =docker.sh=, Git hooks, Git itself, or a
+project script.
+** =describe=
+Prints the discovered worktree/family/Git paths, profile, image, network, state location and mount interpretation.  It does not create state or contact Docker.
+** =doctor=
+Does =describe= plus warnings about legacy launchers/state, risky Git configuration, shared Git, host-network/X11 use, and (when Docker is available) the named existing container's Codex mount, privileged flag, network mode and security options.  It does not repair anything.
+** =launch=
+This is the intended replacement for the old project-local =bash/docker.sh=.
+On its first launch, it creates a path-hashed state directory under
+=~/.local/state/docker-isolator/= (or =DOCKER_ISOLATOR_STATE_HOME=) and will
+copy the legacy =.codex/homestate= only if the new state is empty.
+
+Refuses a pre-existing same-name container or another container mounting the worktree; creates the external state directory; snapshots/pins Git controls; migrates old Codex state only when the new state is empty; installs/pins the beep hook; then starts a detached container.
+** =repair=
+Finds the old container by name or mount, asks before stopping/removing it unless =--yes=, copies its visible Codex home into external state (or preserves a separate recovered copy if both exist), installs the hook, removes the old container, then launches a replacement unless =--no-launch=.
+* Suggested use
+
+First put the actual repositories under the trusted launcher's ignored
+=projects/= directory.  Do not put the isolator itself in SKG or MIDI and do
+not mount the isolator root into an agent container.
+
+#+begin_src sh
+cd /path/to/docker-isolator
+./docker-isolator doctor projects/skg
+./docker-isolator repair projects/skg       # one-time old-container migration
+./docker-isolator launch projects/skg       # subsequent launches
+
+./docker-isolator doctor projects/midi/worktrees/main
+./docker-isolator launch projects/midi/worktrees/main
+#+end_src
+
+Use =describe= before a first launch when checking which profile and state path
+will be selected.  Use =repair= only for migration/replacement of an existing
+container; it is intentionally the destructive command.
+
+* I will probably always want the 'protected-shared' git mode
+If an agent must create ordinary commits which the host and sibling
+worktrees see, =protected-shared= is the only supplied mode that permits it.
+=readonly= leaves worktree files writable but mounts the shared Git database
+read-only, so =git commit= cannot update the host repository.
+* If using worktrees, the AIs can clobber each others' work.
+** the problem
+The MIDI checkout is a linked-worktree hub, not three independent clones:
+#+begin_example
+midi/
+  .bare/                 shared Git common directory: objects, refs, config
+  worktrees/main/        branch main; .git points into .bare/worktrees/main
+  worktrees/2/           branch 2; deleted in this copy, metadata remains
+  worktrees/3/           branch 3; deleted in this copy, metadata remains
+#+end_example
+
+The common database contains every commit object and every branch ref.  A
+MIDI container for =main= receives the full family read-only so its relative
+Git pointers resolve, its selected worktree read/write, and =.bare= read/write
+in =protected-shared= mode.  It can therefore create commits, but it can also
+move/delete refs for branches 2/3, add objects those worktrees will see, and
+disturb sibling worktree administrative data located below =.bare/worktrees/=.
+There is no Docker bind-mount permission that permits only “update this one
+Git branch.”  The deleted worktree directories 2/ and 3/ are reported by Git
+as prunable; their refs and administrative records still exist in the hub.
+
+So =protected-shared= is appropriate only when “agent can affect all MIDI
+worktrees' shared Git history/metadata” is acceptable.  It does not need
+remote credentials to make those local changes.
+** For a strong boundary
+use a separate clone/Git database per agent or choose =readonly= and make the commit yourself after review.
+** Skg is fine.
+SKG clones (skg, skg2, skg3) are independent normal repositories.  Their
+separate per-worktree state hashes and per-worktree bridge networks give much
+better instance separation, assuming their source directories remain separate
+and are all under =projects/=.
+
+* Security limits and operational cautions
+- =protected-shared= protects the default common =config= and =hooks= paths
+  against *future container writes*, but it cannot attest that a formerly
+  writable repository is already safe.  Inspect an existing Git config before
+  host Git use, especially =core.hooksPath=, =include.path=, =fsmonitor=,
+  filters, diff drivers and merge drivers.  =doctor= warns but cannot repair
+  an already-compromised repository automatically.
+- The MIDI profile's host networking means localhost services are reachable;
+  X11 is a broad GUI capability; PipeWire and =/dev/snd= expose host audio/MIDI
+  services.  These are functionality requirements, not sandbox guarantees.
+- The old and current hook formats need a real container test after any Codex
+  CLI image update.  The current host project's working hook is TOML in
+  =.codex/config.toml=, while the isolator's trusted installer provisions a
+  separate =hooks.json= and pins a version-specific trust hash.  The local
+  Codex CLI is =0.154.0= and supports hook-related configuration, but I could
+  not run the isolator against a Docker daemon here.  Before relying on it,
+  launch a disposable target and confirm one main-agent completion beeps and a
+  subagent completion remains silent.  Never bypass hook trust merely to make
+  that test pass; update the trusted template/pin after reviewing the exact
+  command instead.
+- The Codex auth/session mount necessarily gives code in the container access
+  to that instance's Codex credentials.  The launcher prevents arbitrary host
+  execution through its hook paths; it cannot prevent an authenticated hostile
+  process from using credentials exposed to it.
+- The project remains agent-writable.  Do not execute project scripts,
+  =.envrc=, editor config, build definitions, or a changed local launcher on
+  the host merely because the container was isolated.
+* verbose earlier README notes
 
 A small trusted host-side launcher for coding-agent Docker containers.
 
@@ -25,7 +152,7 @@ docker-isolator/
 read-write.** The shipped launcher refuses targets that resolve outside
 `projects/`; its built-in layouts mount only the selected child project family.
 
-## Why this exists
+** Why this exists
 
 A launcher stored inside an agent-writable checkout is not a security boundary.
 An agent can rewrite that launcher (or a helper it invokes), and the next host
@@ -36,7 +163,7 @@ source path with a symlink before the next launch.
 `docker-isolator` keeps host-executed launch code and bind-source roots outside
 agent-writable child repositories.
 
-## Put repositories under `projects/`
+** Put repositories under `projects/`
 
 For an ordinary checkout:
 
@@ -57,7 +184,7 @@ that layout.
 
 No Git history needs to be rewritten by the isolator.
 
-## Discovery: what is automatic
+** Discovery: what is automatic
 
 The launcher reads `.git` pointer files and `commondir` metadata as plain path
 data; it does not need to run `git status`, hooks, project scripts, or a
@@ -91,7 +218,7 @@ If automatic profile matching is ambiguous, pass `--profile skg` or
 `--profile midi`. A nonstandard old container name can similarly be supplied
 with `--container NAME`.
 
-## Commands
+** Commands
 
 From the `docker-isolator` checkout:
 
@@ -108,7 +235,7 @@ From the `docker-isolator` checkout:
 `PATH` may point anywhere inside the selected worktree; it defaults to the
 current directory.
 
-### Repair an older launch
+*** Repair an older launch
 
 ```sh
 ./docker-isolator repair projects/skg
@@ -143,7 +270,7 @@ If both a current external Codex state and a different old-container state are
 nonempty, repair does not merge them. It preserves the recovered copy under the
 instance state directory and tells you where it put it.
 
-## Git worktrees and the remaining cross-worktree tradeoff
+** Git worktrees and the remaining cross-worktree tradeoff
 
 The default supplied profiles use `protected-shared` Git mode because the old
 workflow expected agents to make commits directly in the host repository.
@@ -181,7 +308,7 @@ The worktree files remain writable, but Git metadata is mounted read-only, so
 the agent can edit files but cannot commit into the host repository from the
 container.
 
-## Host capabilities that remain intentional
+** Host capabilities that remain intentional
 
 All profiles apply `no-new-privileges`, drop all capabilities first, and use a
 default PID limit of 4096. The MIDI profile adds back only `SYS_NICE` because
@@ -205,7 +332,7 @@ Some project functionality itself requires broad host surfaces:
 The SKG profile deliberately does not use host networking; its app port is
 published only on loopback.
 
-## Host Git and other project code are not magically trustworthy
+** Host Git and other project code are not magically trustworthy
 
 The protection above prevents **future container writes through the protected
 Git metadata paths**. It cannot prove that a repository already exposed to an
@@ -220,7 +347,7 @@ content as trusted merely because the container launcher is now trusted.
 Review changes before executing such code on the host, especially after a
 session that you are treating as potentially hostile.
 
-## MIDI submodule behavior
+** MIDI submodule behavior
 
 The old MIDI `docker.sh` automatically ran this on the **host** before launch:
 
@@ -235,7 +362,7 @@ from a repository state you are willing to trust before launching if the
 sample-dependent features are needed. The three worktrees in the supplied MIDI
 archive already had that submodule populated.
 
-## State locations
+** State locations
 
 By default persistent isolator state is below:
 
@@ -253,7 +380,7 @@ The parent of those paths is never mounted into the agent container, so the
 agent can modify the Codex-home **contents** it legitimately uses but cannot
 replace the future bind-source directory itself with a project symlink.
 
-## Useful overrides
+** Useful overrides
 
 ```sh
 DOCKER_ISOLATOR_MEMORY=12g DOCKER_ISOLATOR_CPUS=8 \

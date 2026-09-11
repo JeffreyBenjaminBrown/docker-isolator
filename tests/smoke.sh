@@ -6,7 +6,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 iso="$tmp/docker-isolator"
 mkdir -p "$iso"
-cp -a "$here/docker-isolator" "$here/profiles" "$here/trusted" "$iso/"
+cp -a "$here/docker-isolator" "$here/bash" "$here/profiles" "$here/trusted" "$iso/"
 mkdir -p "$iso/projects" "$tmp/bin" "$tmp/networks"
 
 cat > "$tmp/bin/docker" <<'DOCKER'
@@ -50,6 +50,8 @@ grep -F -- '<--publish> <127.0.0.1:1730:1730>' "$log" >/dev/null
 grep -F -- "source=$skg/.git,target=/home/ubuntu/host/.git" "$log" >/dev/null
 grep -F -- 'target=/home/ubuntu/host/.git/config,readonly' "$log" >/dev/null
 grep -F -- 'target=/home/ubuntu/host/.git/hooks,readonly' "$log" >/dev/null
+grep -F -- 'target=/home/ubuntu/.codex/hooks.json,readonly' "$log" >/dev/null
+grep -F -- 'target=/home/ubuntu/.codex/config.toml,readonly' "$log" >/dev/null
 grep -F -- '<--cap-drop> <ALL>' "$log" >/dev/null
 grep -F -- '<no-new-privileges=true>' "$log" >/dev/null
 
