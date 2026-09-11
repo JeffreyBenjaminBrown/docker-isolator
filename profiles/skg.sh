@@ -1,0 +1,18 @@
+# Trusted profile for JeffreyBenjaminBrown/skg checkouts.
+PROFILE_NAME="skg"
+PROFILE_CHILD_REGEX='^skg([0-9]+)?$'
+PROFILE_REMOTE_REGEX='(^|[:/])JeffreyBenjaminBrown/skg(\.git)?$'
+PROFILE_IMAGE='jeffreybbrown/hode:latest'
+PROFILE_NETWORK='isolated-bridge'
+PROFILE_GIT_MODE='protected-shared'
+PROFILE_PIPEWIRE=1
+PROFILE_X11=0
+PROFILE_ALSA=0
+PROFILE_CAP_ADD=()
+PROFILE_ULIMITS=('nofile=524288:524288')
+PROFILE_CLAUDE_CONFIG_REL='my-dot-claude'
+PROFILE_CODEX_HOOK=1
+PROFILE_PORT_FILE='data/skgconfig.toml'
+PROFILE_PORT_KEY='port'
+PROFILE_PUBLISH_ADDRESS='127.0.0.1'
+PROFILE_PREFLIGHT_PATHS=()

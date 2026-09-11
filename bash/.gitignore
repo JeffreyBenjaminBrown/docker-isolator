@@ -1,0 +1,6 @@
+# Child repositories are intentionally not part of the trusted isolator repo.
+/projects/*
+!/projects/.gitkeep
+
+# Local test/state debris.
+/.test-tmp/

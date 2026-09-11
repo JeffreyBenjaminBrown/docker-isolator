@@ -1,0 +1,16 @@
+{
+  "description": "Play the soothing beep when the main Codex agent finishes a turn.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/sound/beep-if-main-agent.sh beep-soothing",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
