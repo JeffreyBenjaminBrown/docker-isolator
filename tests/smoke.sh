@@ -55,6 +55,12 @@ grep -F -- 'target=/home/ubuntu/.codex/config.toml,readonly' "$log" >/dev/null
 grep -F -- '<--cap-drop> <ALL>' "$log" >/dev/null
 grep -F -- '<no-new-privileges=true>' "$log" >/dev/null
 
+# A second launch of the same state must refresh its read-only protected files
+# by replacing them, rather than attempting to overwrite them in place.
+FAKE_DOCKER_LOG="$log" FAKE_NETWORKS="$tmp/networks" PATH="$tmp/bin:$PATH" \
+DOCKER_ISOLATOR_STATE_HOME="$tmp/state-skg" \
+  "$iso/docker-isolator" launch "$skg" --container skg3-second >/dev/null
+
 # Synthetic version of the uploaded MIDI relative-worktree layout.
 midi="$iso/projects/midi"
 wt="$midi/worktrees/main"

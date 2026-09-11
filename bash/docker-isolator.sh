@@ -352,6 +352,33 @@ migrate_legacy_codex_if_needed() {
   fi
 }
 
+# Protected files are deliberately mode 0444 after creation.  Refresh them by
+# atomically replacing their directory entry, rather than opening the existing
+# read-only file for truncation (which would make a second launch fail).
+replace_protected_file() {
+  local source="$1" name="$2" mode="$3" destination tmp
+  destination="$PROTECTED_DIR/$name"
+  tmp="$(mktemp "$PROTECTED_DIR/.${name}.XXXXXX")"
+  if ! cp -- "$source" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  chmod "$mode" "$tmp"
+  mv -fT -- "$tmp" "$destination"
+}
+
+replace_protected_text() {
+  local name="$1" mode="$2" text="$3" destination tmp
+  destination="$PROTECTED_DIR/$name"
+  tmp="$(mktemp "$PROTECTED_DIR/.${name}.XXXXXX")"
+  if ! printf '%s\n' "$text" > "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  chmod "$mode" "$tmp"
+  mv -fT -- "$tmp" "$destination"
+}
+
 # Copy trusted Git metadata controls outside the writable project, then mount
 # those copies read-only. This prevents the agent from changing what host Git
 # will later treat as repository config/hooks through the paths we protect.
@@ -361,8 +388,7 @@ prepare_git_protection() {
   nlink="$(stat -c %h -- "$common_config")"
   [ "$nlink" = 1 ] || fail "Git config has $nlink hard links; refusing because an alternate writable path could bypass protection: $common_config"
 
-  cp -- "$common_config" "$PROTECTED_DIR/common-config"
-  chmod 0444 "$PROTECTED_DIR/common-config"
+  replace_protected_file "$common_config" common-config 0444
 
   if [ -L "$hooks" ]; then
     fail "Git hooks path is a symlink: $hooks; repair/review it before isolating this repo"
@@ -379,8 +405,7 @@ prepare_git_protection() {
     dotgit_links="$(stat -c %h -- "$dotgit")"
     [ "$dotgit_links" = 1 ] || fail "worktree .git pointer has $dotgit_links hard links; refusing: $dotgit"
     rel_gitdir="$(realpath --relative-to="$WT_TOP" "$GIT_DIR")"
-    printf 'gitdir: %s\n' "$rel_gitdir" > "$PROTECTED_DIR/worktree-dot-git"
-    chmod 0444 "$PROTECTED_DIR/worktree-dot-git"
+    replace_protected_text worktree-dot-git 0444 "gitdir: $rel_gitdir"
   fi
 
   # Protect worktree-specific config when the repository uses it.
@@ -388,8 +413,7 @@ prepare_git_protection() {
   if [ -f "$GIT_DIR/config.worktree" ]; then
     [ ! -L "$GIT_DIR/config.worktree" ] || fail "symlinked Git worktree config: $GIT_DIR/config.worktree"
     [ "$(stat -c %h -- "$GIT_DIR/config.worktree")" = 1 ] || fail "hard-linked Git worktree config: $GIT_DIR/config.worktree"
-    cp -- "$GIT_DIR/config.worktree" "$PROTECTED_DIR/config.worktree"
-    chmod 0444 "$PROTECTED_DIR/config.worktree"
+    replace_protected_file "$GIT_DIR/config.worktree" config.worktree 0444
     WORKTREE_CONFIG_SOURCE="$PROTECTED_DIR/config.worktree"
   fi
 }
@@ -588,9 +612,8 @@ prepare_codex_hook_protection() {
   [ -f "$config" ] && [ ! -L "$config" ] || fail "Codex config is missing or symlinked: $config"
   [ "$(stat -c %h -- "$hooks")" = 1 ] || fail "Codex hook file has alternate hard links: $hooks"
   [ "$(stat -c %h -- "$config")" = 1 ] || fail "Codex config has alternate hard links: $config"
-  cp -- "$hooks" "$PROTECTED_DIR/codex-hooks.json"
-  cp -- "$config" "$PROTECTED_DIR/codex-config.toml"
-  chmod 0444 "$PROTECTED_DIR/codex-hooks.json" "$PROTECTED_DIR/codex-config.toml"
+  replace_protected_file "$hooks" codex-hooks.json 0444
+  replace_protected_file "$config" codex-config.toml 0444
   CODEX_HOOK_SOURCE="$PROTECTED_DIR/codex-hooks.json"
   CODEX_CONFIG_SOURCE="$PROTECTED_DIR/codex-config.toml"
 }
