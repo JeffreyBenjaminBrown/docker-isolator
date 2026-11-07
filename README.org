@@ -213,6 +213,10 @@ The supplied profiles match the examples:
   PipeWire, X11, `/dev/snd`, sound-device cgroup access, `SYS_NICE`, realtime
   priority and unlimited memlock. Those are intentionally broad host
   capabilities and are reported by `doctor`/`describe`.
+- `profiles/ekg.sh`: the DIY EKG project. Like SKG it keeps an isolated
+  bridge network, but it can open USB serial ports (`/hostdev/ttyACM*`,
+  `/hostdev/ttyUSB*`) and raw USB devices (`/dev/bus/usb`) to read and
+  program microcontroller boards. Raw USB writes also need a host udev rule.
 
 If automatic profile matching is ambiguous, pass `--profile skg` or
 `--profile midi`. A nonstandard old container name can similarly be supplied

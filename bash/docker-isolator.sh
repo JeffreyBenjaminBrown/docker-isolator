@@ -552,7 +552,7 @@ build_resource_args() {
 
 build_profile_args() {
   PROFILE_ARGS=()
-  local host_uid pipewire audio_gid cap
+  local host_uid pipewire audio_gid dialout_gid cap
   host_uid="$(id -u)"
 
   if [ "$PROFILE_PIPEWIRE" = 1 ]; then
@@ -581,6 +581,42 @@ build_profile_args() {
       [ -z "$audio_gid" ] || PROFILE_ARGS+=(--group-add "$audio_gid")
     else
       warn "/dev/snd is unavailable; launching without direct ALSA/MIDI device access"
+    fi
+  fi
+
+  if [ "$PROFILE_SERIAL" = 1 ] || [ "$PROFILE_USB_DFU" = 1 ]; then
+    # Host udev gives serial ports (and, given a host rule, USB boards)
+    # to the dialout group.
+    dialout_gid="$(getent group dialout 2>/dev/null | cut -d: -f3 || true)"
+    if [ -n "$dialout_gid" ]; then
+      PROFILE_ARGS+=(--group-add "$dialout_gid")
+    else
+      warn "host has no dialout group; serial/USB devices may be unreadable in the container"
+    fi
+  fi
+
+  if [ "$PROFILE_SERIAL" = 1 ]; then
+    # USB serial adapters appear and disappear while the container runs,
+    # so no fixed --device list fits them. Instead the host's /dev is
+    # visible read-only at /hostdev, without its submounts (/dev/shm,
+    # /dev/pts, ...), and the device cgroup lets the container open only
+    # the serial majors: 166 = ttyACM* (e.g. Arduino UNO R4), 188 =
+    # ttyUSB* (e.g. CH340 adapters). Ports appear as /hostdev/ttyACM0 etc.
+    PROFILE_ARGS+=(--mount 'type=bind,source=/dev,target=/hostdev,readonly,bind-recursive=disabled')
+    PROFILE_ARGS+=(--device-cgroup-rule 'c 166:* rmw')
+    PROFILE_ARGS+=(--device-cgroup-rule 'c 188:* rmw')
+  fi
+
+  if [ "$PROFILE_USB_DFU" = 1 ]; then
+    # Raw USB access, for boards that are programmed over DFU (e.g. the
+    # Arduino UNO R4 Minima, via dfu-util). libusb looks in /dev/bus/usb.
+    # Host file permissions still apply: by default only root can write
+    # these nodes, so the host needs a udev rule for each board's vendor.
+    if [ -d /dev/bus/usb ]; then
+      PROFILE_ARGS+=(--mount 'type=bind,source=/dev/bus/usb,target=/dev/bus/usb')
+      PROFILE_ARGS+=(--device-cgroup-rule 'c 189:* rmw')
+    else
+      warn "/dev/bus/usb is unavailable; launching without raw USB access"
     fi
   fi
 
@@ -658,6 +694,8 @@ EOF_DESC
   [ "$PROFILE_NETWORK" != host ] || echo 'network warning:  host network namespace is shared with the host'
   [ "$PROFILE_X11" != 1 ] || echo 'X11 warning:      host X11 socket is exposed when available'
   [ "$PROFILE_ALSA" != 1 ] || echo 'device warning:   /dev/snd and sound-device cgroup access are exposed when available'
+  [ "$PROFILE_SERIAL" != 1 ] || echo 'device warning:   host /dev names at /hostdev; serial (ttyACM*/ttyUSB*) access'
+  [ "$PROFILE_USB_DFU" != 1 ] || echo 'device warning:   /dev/bus/usb and raw USB cgroup access (host permissions apply)'
 }
 
 # shellcheck source=lib/launch.sh

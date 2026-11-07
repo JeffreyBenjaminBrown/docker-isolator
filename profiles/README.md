@@ -12,6 +12,10 @@ The current profile variables are intentionally simple shell data:
 - `PROFILE_NETWORK`: `isolated-bridge`, `host`, or `none`
 - `PROFILE_GIT_MODE`: `protected-shared` or `readonly`
 - `PROFILE_PIPEWIRE`, `PROFILE_X11`, `PROFILE_ALSA`
+- `PROFILE_SERIAL`: hot-pluggable USB serial ports (`ttyACM*`, `ttyUSB*`),
+  visible in the container as `/hostdev/ttyACM0` etc.
+- `PROFILE_USB_DFU`: raw USB access (`/dev/bus/usb`) for boards programmed
+  over DFU; the host must also grant the board's device node to `dialout`
 - `PROFILE_CAP_ADD=(...)`
 - `PROFILE_ULIMITS=(...)`
 - `PROFILE_CLAUDE_CONFIG_REL`
