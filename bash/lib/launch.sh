@@ -21,7 +21,6 @@ launch_prepared() {
   local args=(run --name "$CONTAINER_NAME" -it -d
     --platform linux/amd64
     --user "$CONTAINER_UID:$CONTAINER_GID"
-    --dns 8.8.8.8 --dns 1.1.1.1
     -w "$CONTAINER_WT"
   )
   args+=("${NETWORK_ARGS[@]}" "${CAP_ARGS[@]}" "${RESOURCE_ARGS[@]}" "${MOUNT_ARGS[@]}" "${PROFILE_ARGS[@]}")
