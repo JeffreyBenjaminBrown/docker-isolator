@@ -120,6 +120,16 @@ if grep -E -- '<--network> <host>|/tmp/.X11-unix|/dev/snd' "$log" >/dev/null; th
   echo 'ekg profile exposed host network, X11 or ALSA' >&2; exit 1
 fi
 
+# A project without its own .git must be refused with a clear message,
+# even when projects/ itself holds a stray .git.
+mkdir -p "$iso/projects/.git" "$iso/projects/nogit"
+if out="$(DOCKER_ISOLATOR_STATE_HOME="$tmp/state-nogit" \
+      "$iso/docker-isolator" describe "$iso/projects/nogit" 2>&1)"; then
+  echo 'a project without .git was accepted' >&2; exit 1
+fi
+grep -F 'could not find a .git entry' <<<"$out" >/dev/null
+rm -rf "$iso/projects/.git" "$iso/projects/nogit"
+
 # describe must not create persistent state.
 rm -rf "$tmp/describe-state"
 DOCKER_ISOLATOR_STATE_HOME="$tmp/describe-state" \

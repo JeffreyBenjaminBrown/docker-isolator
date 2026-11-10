@@ -118,11 +118,13 @@ read_core_bare() {
 find_worktree_root() {
   local p="$1"
   while :; do
+    # projects/ itself is never a project, even if it holds a stray .git
+    # (e.g. from running 'git init' one directory too high).
+    [ "$p" != "$PROJECTS_ROOT" ] || break
     if [ -e "$p/.git" ] || [ -L "$p/.git" ]; then
       printf '%s\n' "$p"
       return 0
     fi
-    [ "$p" != "$PROJECTS_ROOT" ] || break
     [ "$(dirname "$p")" != "$p" ] || break
     p="$(dirname "$p")"
   done
