@@ -11,9 +11,6 @@ PROFILE_NETWORK='isolated-bridge'
 # objects are still shared across worktrees.
 PROFILE_GIT_MODE='protected-shared'
 PROFILE_PIPEWIRE=1
-# The live plotter shows its traces in the host's browser (see the
-# port below), so the container needs no X11.
-PROFILE_X11=0
 PROFILE_ALSA=0
 PROFILE_SERIAL=1
 PROFILE_USB_DFU=1

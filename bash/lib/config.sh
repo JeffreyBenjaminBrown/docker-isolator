@@ -7,7 +7,7 @@ reset_profile_vars() {
   PROFILE_NETWORK='isolated-bridge'
   PROFILE_GIT_MODE='protected-shared'
   PROFILE_PIPEWIRE=0
-  PROFILE_X11=0
+  unset PROFILE_X11  # removed setting; load_profile rejects it
   PROFILE_ALSA=0
   PROFILE_SERIAL=0
   PROFILE_USB_DFU=0

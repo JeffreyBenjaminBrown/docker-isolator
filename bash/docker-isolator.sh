@@ -44,7 +44,8 @@ Git modes:
 Environment overrides:
   DOCKER_ISOLATOR_IMAGE, DOCKER_ISOLATOR_STATE_HOME,
   DOCKER_ISOLATOR_MEMORY, DOCKER_ISOLATOR_CPUS,
-  DOCKER_ISOLATOR_PIDS_LIMIT, DOCKER_ISOLATOR_LEGACY_CODEX, SKG_CONFIG
+  DOCKER_ISOLATOR_PIDS_LIMIT, DOCKER_ISOLATOR_LEGACY_CODEX,
+  SKG_CONFIG (skg profile only)
 USAGE
 }
 
@@ -224,6 +225,7 @@ load_profile() {
     # shellcheck source=/dev/null
     source "$p"
     [ "$PROFILE_NAME" = "$requested" ] || fail "profile name mismatch in $p"
+    reject_removed_settings "$p"
     PROFILE_PATH="$p"
     return
   fi
@@ -249,7 +251,16 @@ load_profile() {
   reset_profile_vars
   # shellcheck source=/dev/null
   source "$p"
+  reject_removed_settings "$p"
   PROFILE_PATH="$p"
+}
+
+# docker-isolator never exposes the host's X11 display: an X11 client can
+# read keystrokes from, and type into, every window on it. A project that
+# needs a GUI serves a web page on a published port instead.
+reject_removed_settings() {
+  [ -z "${PROFILE_X11+set}" ] \
+    || fail "$1 sets PROFILE_X11, which docker-isolator no longer supports; delete that line"
 }
 
 derive_identity() {
@@ -440,7 +451,9 @@ check_repo_config_risks() {
 
 read_profile_port() {
   [ -n "$PROFILE_PORT_FILE" ] || { PROFILE_PORT=''; return 0; }
-  local rel="${SKG_CONFIG:-$PROFILE_PORT_FILE}" file key="$PROFILE_PORT_KEY" value
+  local rel="$PROFILE_PORT_FILE" file key="$PROFILE_PORT_KEY" value
+  # SKG_CONFIG names an alternate SKG config file; other profiles ignore it.
+  [ "$PROFILE_NAME" != skg ] || rel="${SKG_CONFIG:-$rel}"
   case "$rel" in
     /*) file="$rel" ;;
     *) file="$WT_TOP/$rel" ;;
@@ -566,15 +579,6 @@ build_profile_args() {
     fi
   fi
 
-  if [ "$PROFILE_X11" = 1 ]; then
-    if [ -d /tmp/.X11-unix ]; then
-      PROFILE_ARGS+=(--mount 'type=bind,source=/tmp/.X11-unix,target=/tmp/.X11-unix,readonly')
-      PROFILE_ARGS+=(-e "DISPLAY=${DISPLAY:-:0}")
-    else
-      warn "/tmp/.X11-unix is unavailable; launching without X11"
-    fi
-  fi
-
   if [ "$PROFILE_ALSA" = 1 ]; then
     if [ -d /dev/snd ]; then
       PROFILE_ARGS+=(--mount 'type=bind,source=/dev/snd,target=/dev/snd')
@@ -694,7 +698,6 @@ EOF_DESC
     echo 'Git isolation:    Git metadata read-only'
   fi
   [ "$PROFILE_NETWORK" != host ] || echo 'network warning:  host network namespace is shared with the host'
-  [ "$PROFILE_X11" != 1 ] || echo 'X11 warning:      host X11 socket is exposed when available'
   [ "$PROFILE_ALSA" != 1 ] || echo 'device warning:   /dev/snd and sound-device cgroup access are exposed when available'
   [ "$PROFILE_SERIAL" != 1 ] || echo 'device warning:   host /dev names at /hostdev; serial (ttyACM*/ttyUSB*) access'
   [ "$PROFILE_USB_DFU" != 1 ] || echo 'device warning:   /dev/bus/usb and raw USB cgroup access (host permissions apply)'
@@ -806,9 +809,6 @@ legacy_doctor_prepared() {
   fi
   if [ "$PROFILE_NETWORK" = host ]; then
     warn "host networking intentionally removes Docker network isolation from the host and sibling host-network containers"
-  fi
-  if [ "$PROFILE_X11" = 1 ]; then
-    warn "X11 access is a broad host GUI capability; keep it only if this project needs GUI windows"
   fi
 
   if ! command -v docker >/dev/null 2>&1; then

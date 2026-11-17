@@ -11,9 +11,6 @@ PROFILE_NETWORK='host'
 # objects are still shared across worktrees.
 PROFILE_GIT_MODE='protected-shared'
 PROFILE_PIPEWIRE=1
-# No X11: an X11 client can read keystrokes from, and type into, any
-# window on the host's display.
-PROFILE_X11=0
 PROFILE_ALSA=1
 PROFILE_SERIAL=0
 PROFILE_USB_DFU=0

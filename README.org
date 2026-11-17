@@ -31,7 +31,7 @@ project script.
 ** =describe=
 Prints the discovered worktree/family/Git paths, profile, image, network, state location and mount interpretation.  It does not create state or contact Docker.
 ** =doctor=
-Does =describe= plus warnings about legacy launchers/state, risky Git configuration, shared Git, host-network/X11 use, and (when Docker is available) the named existing container's Codex mount, privileged flag, network mode and security options.  It does not repair anything.
+Does =describe= plus warnings about legacy launchers/state, risky Git configuration, shared Git, host-network use, and (when Docker is available) the named existing container's Codex mount, privileged flag, network mode and security options.  It does not repair anything.
 ** =launch=
 This is the intended replacement for the old project-local =bash/docker.sh=.
 On its first launch, it creates a path-hashed state directory under
@@ -200,7 +200,7 @@ For a target it normally discovers:
 - a stable per-path external state directory.
 
 Project policy is intentionally **not** inferred from untrusted files. Trusted
-profiles decide things such as host networking, X11, sound-device access,
+profiles decide things such as host networking, sound-device access,
 capabilities, and how a service port is exposed.
 
 The supplied profiles match the examples:
@@ -325,12 +325,14 @@ Some project functionality itself requires broad host surfaces:
 - **MIDI host networking**: the container shares the host network namespace.
   It can reach host-local services and other host-network containers. This is
   not network isolation.
-- **X11** (no current profile enables it): access to the host X11 socket is a
-  broad GUI capability. Depending on the host/X server setup, X11 clients can
-  have much more visibility/control than a normal sandboxed GUI application.
 - **PipeWire**: exposes the host user's audio service to the container when the
   socket exists.
 - **`/dev/snd`**: MIDI exposes host ALSA/MIDI sound devices when present.
+
+X11 is deliberately absent from that list: no profile can expose the host's X
+display, because an X11 client can read keystrokes from, and type into, every
+window on it. A project that needs a GUI serves a web page on a port published
+to `127.0.0.1` instead.
 - **credentials**: Codex and Claude must be able to read the credentials needed
   for their own sessions; an already-authorized hostile process could try to
   exfiltrate those credentials.

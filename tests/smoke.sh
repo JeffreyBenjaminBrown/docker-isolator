@@ -115,8 +115,9 @@ printf 'ref: refs/heads/main\n' > "$ekg/.git/HEAD"
 mkdir -p "$ekg/diy"
 printf 'port = 8250\n' > "$ekg/diy/ekg.toml"
 log="$tmp/ekg.log"
+# SKG_CONFIG belongs to the skg profile; the ekg launch must ignore it.
 FAKE_DOCKER_LOG="$log" FAKE_NETWORKS="$tmp/networks" PATH="$tmp/bin:$PATH" \
-DOCKER_ISOLATOR_STATE_HOME="$tmp/state-ekg" \
+DOCKER_ISOLATOR_STATE_HOME="$tmp/state-ekg" SKG_CONFIG=/nonexistent.toml \
   "$iso/docker-isolator" launch "$ekg" >/dev/null 2>&1
 grep -F -- 'source=/dev,target=/hostdev,readonly,bind-recursive=disabled' "$log" >/dev/null
 grep -F -- "<--device-cgroup-rule> <c 166:* rmw>" "$log" >/dev/null
@@ -126,6 +127,16 @@ grep -F -- "<--publish> <127.0.0.1:8250:8250>" "$log" >/dev/null
 if grep -E -- '<--network> <host>|/tmp/.X11-unix|/dev/snd' "$log" >/dev/null; then
   echo 'ekg profile exposed host network, X11 or ALSA' >&2; exit 1
 fi
+
+# A profile that still sets the removed PROFILE_X11 must be refused.
+cp "$iso/profiles/ekg.sh" "$tmp/ekg.sh.orig"
+printf 'PROFILE_X11=1\n' >> "$iso/profiles/ekg.sh"
+if out="$(DOCKER_ISOLATOR_STATE_HOME="$tmp/state-x11" \
+      "$iso/docker-isolator" describe "$ekg" 2>&1)"; then
+  echo 'a profile setting PROFILE_X11 was accepted' >&2; exit 1
+fi
+grep -F 'PROFILE_X11' <<<"$out" >/dev/null
+cp "$tmp/ekg.sh.orig" "$iso/profiles/ekg.sh"
 
 # A project without its own .git must be refused with a clear message,
 # even when projects/ itself holds a stray .git.

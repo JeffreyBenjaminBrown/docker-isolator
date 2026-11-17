@@ -14,7 +14,6 @@ doctor_prepared() {
   check_repo_config_risks
   [ "$EFFECTIVE_GIT_MODE" != protected-shared ] || warn "shared Git refs/objects are writable; an agent in this worktree can change sibling branches/refs"
   [ "$PROFILE_NETWORK" != host ] || warn "host networking intentionally removes Docker network isolation from the host and sibling host-network containers"
-  [ "$PROFILE_X11" != 1 ] || warn "X11 access is a broad host GUI capability; keep it only if this project needs GUI windows"
   if ! command -v docker >/dev/null 2>&1; then
     echo; warn "Docker CLI not found; skipping live-container inspection"; return 0
   fi
