@@ -16,7 +16,7 @@ sets =no-new-privileges=, and does not mount a Docker socket.
 It is therefore reasonable for SKG, subject to the caveats below.  MIDI's
 profile deliberately grants much broader host access, so it is *not* strong
 isolation from a malicious process.  In particular it has host networking,
-X11, PipeWire, ALSA devices, realtime scheduling, and shared Git metadata.
+PipeWire, ALSA devices, realtime scheduling, and shared Git metadata.
 
 The current running container was not launched by this isolator: its project
 =bash/docker.sh= bind-mounts the whole checkout read/write, including Git
@@ -106,8 +106,7 @@ and are all under =projects/=.
   filters, diff drivers and merge drivers.  =doctor= warns but cannot repair
   an already-compromised repository automatically.
 - The MIDI profile's host networking means localhost services are reachable;
-  X11 is a broad GUI capability; PipeWire and =/dev/snd= expose host audio/MIDI
-  services.  These are functionality requirements, not sandbox guarantees.
+  PipeWire and =/dev/snd= expose host audio/MIDI services.  These are functionality requirements, not sandbox guarantees.
 - The old and current hook formats need a real container test after any Codex
   CLI image update.  The current host project's working hook is TOML in
   =.codex/config.toml=, while the isolator's trusted installer provisions a
@@ -210,14 +209,16 @@ The supplied profiles match the examples:
   `data/skgconfig.toml` (or `$SKG_CONFIG`) and published on `127.0.0.1` only,
   PipeWire when available.
 - `profiles/midi.sh`: preserves the old MIDI requirements: host networking,
-  PipeWire, X11, `/dev/snd`, sound-device cgroup access, `SYS_NICE`, realtime
+  PipeWire, `/dev/snd`, sound-device cgroup access, `SYS_NICE`, realtime
   priority and unlimited memlock. Those are intentionally broad host
   capabilities and are reported by `doctor`/`describe`.
 - `profiles/ekg.sh`: the DIY EKG project. Like SKG it keeps an isolated
   bridge network, but it can open USB serial ports (`/hostdev/ttyACM*`,
   `/hostdev/ttyUSB*`) and raw USB devices (`/dev/bus/usb`) to read and
   program microcontroller boards. Raw USB writes also need a host udev rule.
-  It also exposes the host X11 socket, so live plots can open windows.
+  It publishes one port on the host's `127.0.0.1`, read from the project's
+  `diy/ekg.toml`, so the live plotter can show its traces in the host's
+  browser.
 
 If automatic profile matching is ambiguous, pass `--profile skg` or
 `--profile midi`. A nonstandard old container name can similarly be supplied
@@ -324,9 +325,9 @@ Some project functionality itself requires broad host surfaces:
 - **MIDI host networking**: the container shares the host network namespace.
   It can reach host-local services and other host-network containers. This is
   not network isolation.
-- **X11**: access to the host X11 socket is a broad GUI capability. Depending on
-  the host/X server setup, X11 clients can have much more visibility/control
-  than a normal sandboxed GUI application.
+- **X11** (no current profile enables it): access to the host X11 socket is a
+  broad GUI capability. Depending on the host/X server setup, X11 clients can
+  have much more visibility/control than a normal sandboxed GUI application.
 - **PipeWire**: exposes the host user's audio service to the container when the
   socket exists.
 - **`/dev/snd`**: MIDI exposes host ALSA/MIDI sound devices when present.

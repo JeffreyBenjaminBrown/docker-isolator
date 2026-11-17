@@ -89,6 +89,9 @@ DOCKER_ISOLATOR_STATE_HOME="$tmp/state-midi" \
 
 grep -F -- '<--network> <host>' "$log" >/dev/null
 grep -F -- '<--cap-add> <SYS_NICE>' "$log" >/dev/null
+if grep -F -- '/tmp/.X11-unix' "$log" >/dev/null; then
+  echo 'midi profile exposed X11' >&2; exit 1
+fi
 grep -F -- "source=$midi,target=/home/ubuntu/host,readonly" "$log" >/dev/null
 grep -F -- "source=$wt,target=/home/ubuntu/host/worktrees/main" "$log" >/dev/null
 grep -F -- "source=$midi/.bare,target=/home/ubuntu/host/.bare" "$log" >/dev/null
@@ -103,11 +106,14 @@ DOCKER_ISOLATOR_STATE_HOME="$tmp/state-readonly" \
   "$iso/docker-isolator" launch "$skg" --git-mode readonly --container skg3-ro >/dev/null
 grep -F -- "source=$skg/.git,target=/home/ubuntu/host/.git,readonly" "$log" >/dev/null
 
-# The EKG profile exposes serial and raw-USB devices and X11, nothing broader.
+# The EKG profile exposes serial and raw-USB devices and one loopback port,
+# nothing broader.
 ekg="$iso/projects/diy_ekg"
 mkdir -p "$ekg/.git/hooks"
 printf '[core]\n  bare = false\n' > "$ekg/.git/config"
 printf 'ref: refs/heads/main\n' > "$ekg/.git/HEAD"
+mkdir -p "$ekg/diy"
+printf 'port = 8250\n' > "$ekg/diy/ekg.toml"
 log="$tmp/ekg.log"
 FAKE_DOCKER_LOG="$log" FAKE_NETWORKS="$tmp/networks" PATH="$tmp/bin:$PATH" \
 DOCKER_ISOLATOR_STATE_HOME="$tmp/state-ekg" \
@@ -116,12 +122,9 @@ grep -F -- 'source=/dev,target=/hostdev,readonly,bind-recursive=disabled' "$log"
 grep -F -- "<--device-cgroup-rule> <c 166:* rmw>" "$log" >/dev/null
 grep -F -- "<--device-cgroup-rule> <c 188:* rmw>" "$log" >/dev/null
 # ('! grep' would not trip set -e, hence the explicit test.)
-if grep -E -- '<--network> <host>|/dev/snd' "$log" >/dev/null; then
-  echo 'ekg profile exposed host network or ALSA' >&2; exit 1
-fi
-# X11 is mounted only when the host has an X socket directory.
-if [ -d /tmp/.X11-unix ]; then
-  grep -F -- 'source=/tmp/.X11-unix,target=/tmp/.X11-unix' "$log" >/dev/null
+grep -F -- "<--publish> <127.0.0.1:8250:8250>" "$log" >/dev/null
+if grep -E -- '<--network> <host>|/tmp/.X11-unix|/dev/snd' "$log" >/dev/null; then
+  echo 'ekg profile exposed host network, X11 or ALSA' >&2; exit 1
 fi
 
 # A project without its own .git must be refused with a clear message,
