@@ -11,8 +11,9 @@ PROFILE_NETWORK='isolated-bridge'
 # objects are still shared across worktrees.
 PROFILE_GIT_MODE='protected-shared'
 PROFILE_PIPEWIRE=1
-# Plots are saved as files. Set X11=1 only to open live plot windows.
-PROFILE_X11=0
+# Live plots ('code/cerelog_sweep.py') open windows on the host's X
+# display, as midi's GUIs do.
+PROFILE_X11=1
 PROFILE_ALSA=0
 PROFILE_SERIAL=1
 PROFILE_USB_DFU=1

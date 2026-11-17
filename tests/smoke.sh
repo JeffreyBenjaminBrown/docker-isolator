@@ -103,7 +103,7 @@ DOCKER_ISOLATOR_STATE_HOME="$tmp/state-readonly" \
   "$iso/docker-isolator" launch "$skg" --git-mode readonly --container skg3-ro >/dev/null
 grep -F -- "source=$skg/.git,target=/home/ubuntu/host/.git,readonly" "$log" >/dev/null
 
-# The EKG profile exposes serial and raw-USB devices, nothing broader.
+# The EKG profile exposes serial and raw-USB devices and X11, nothing broader.
 ekg="$iso/projects/diy_ekg"
 mkdir -p "$ekg/.git/hooks"
 printf '[core]\n  bare = false\n' > "$ekg/.git/config"
@@ -116,8 +116,12 @@ grep -F -- 'source=/dev,target=/hostdev,readonly,bind-recursive=disabled' "$log"
 grep -F -- "<--device-cgroup-rule> <c 166:* rmw>" "$log" >/dev/null
 grep -F -- "<--device-cgroup-rule> <c 188:* rmw>" "$log" >/dev/null
 # ('! grep' would not trip set -e, hence the explicit test.)
-if grep -E -- '<--network> <host>|/tmp/.X11-unix|/dev/snd' "$log" >/dev/null; then
-  echo 'ekg profile exposed host network, X11 or ALSA' >&2; exit 1
+if grep -E -- '<--network> <host>|/dev/snd' "$log" >/dev/null; then
+  echo 'ekg profile exposed host network or ALSA' >&2; exit 1
+fi
+# X11 is mounted only when the host has an X socket directory.
+if [ -d /tmp/.X11-unix ]; then
+  grep -F -- 'source=/tmp/.X11-unix,target=/tmp/.X11-unix' "$log" >/dev/null
 fi
 
 # A project without its own .git must be refused with a clear message,

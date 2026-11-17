@@ -217,6 +217,7 @@ The supplied profiles match the examples:
   bridge network, but it can open USB serial ports (`/hostdev/ttyACM*`,
   `/hostdev/ttyUSB*`) and raw USB devices (`/dev/bus/usb`) to read and
   program microcontroller boards. Raw USB writes also need a host udev rule.
+  It also exposes the host X11 socket, so live plots can open windows.
 
 If automatic profile matching is ambiguous, pass `--profile skg` or
 `--profile midi`. A nonstandard old container name can similarly be supplied
